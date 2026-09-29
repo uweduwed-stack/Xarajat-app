@@ -45,17 +45,25 @@ nav button{font-size:13px;padding-left:2px;padding-right:2px}
 .hr{border-top:1px solid var(--bd);margin-top:10px;padding-top:10px}.big{font-size:20px}
 .keys{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.keys button{padding:14px 0;font-size:20px}.keys .op{color:var(--pri);font-weight:700}.keys .z{grid-column:span 2}
 .cd{text-align:right;font-size:26px;min-height:34px;word-break:break-all}.cr{text-align:right;color:var(--mut);min-height:20px}
+.btn{display:block;text-align:center;background:var(--pri);color:#fff;border-radius:10px;padding:11px;text-decoration:none;font-weight:600}
+input[type=file]{padding:9px}
+#lock{position:fixed;inset:0;z-index:50;background:var(--bg);display:none;align-items:center;justify-content:center;padding:20px}
+#lock.on{display:flex}
+.dots{display:flex;justify-content:center;gap:14px;margin:18px 0 8px}
+.dots i{width:14px;height:14px;border-radius:50%;border:2px solid var(--pri)}.dots i.f{background:var(--pri)}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}.pad button{height:64px;font-size:24px}
 </style>
 </head>
 <body>
 <main id="app"></main>
 <div id="modal"></div>
 <div id="calc"></div>
+<div id="lock"></div>
 <nav>
   <button data-t="home" onclick="go('home')">Asosiy</button>
   <button data-t="rep" onclick="go('rep')">Hisobot</button>
   <button data-t="debts" onclick="go('debts')">Qarzlar</button>
-  <button data-t="cats" onclick="go('cats')">Kategoriyalar</button>
+  <button data-t="menu" onclick="go('menu')">Menyu</button>
 </nav>
 <script>
 const K='harajat_v1';
@@ -75,9 +83,9 @@ function load(){
     inc:['Oylik','Bonus','Boshqa']}};
 }
 function save(){try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}}
-let S=load(), tab='home', month=today().slice(0,7), catType='exp';
+let S=load(), tab='home', month=today().slice(0,7), catType='exp', mp='';
 
-function go(t){tab=t;render()}
+function go(t){tab=t;mp='';render()}
 function shift(d){
   let [y,m]=month.split('-').map(Number);m+=d;
   if(m<1){m=12;y--}if(m>12){m=1;y++}
@@ -87,7 +95,7 @@ function close_(){$('#modal').innerHTML=''}
 
 function render(){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
-  $('#app').innerHTML=tab==='home'?home():tab==='rep'?report():tab==='debts'?debts():cats();
+  $('#app').innerHTML=tab==='home'?home():tab==='rep'?report():tab==='debts'?debts():menu();
 }
 
 /* ---------- Asosiy ---------- */
@@ -300,7 +308,122 @@ function calcApply(){
   $('#'+cf).value=v;calcClose();
 }
 
+/* ---------- PIN-kod ---------- */
+const VER='1.1.0', PK='harajat_pin';
+const hex=b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
+async function hashPw(pw,salt){
+  const enc=new TextEncoder();
+  const k=await crypto.subtle.importKey('raw',enc.encode(pw),'PBKDF2',false,['deriveBits']);
+  return hex(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:enc.encode(salt),iterations:100000},k,256));
+}
+const pinCfg=()=>{try{return JSON.parse(localStorage.getItem(PK))}catch(e){return null}};
+async function pinOk(p){const c=pinCfg();return !!c&&await hashPw(p,c.salt)===c.hash}
+let pinBuf='',pinCb=null,pinTitle='',pinMsg='',pinCancel=false,pinForgot=false;
+function pinAsk(title,cb,o={}){pinBuf='';pinTitle=title;pinCb=cb;pinMsg=o.msg||'';pinCancel=!!o.cancel;pinForgot=!!o.forgot;pinDraw();$('#lock').classList.add('on')}
+function pinClose(){$('#lock').classList.remove('on');$('#lock').innerHTML=''}
+function pinDraw(){
+  const B=n=>`<button onclick="pinKey('${n}')">${n}</button>`;
+  $('#lock').innerHTML=`<div style="width:100%;max-width:300px;text-align:center">
+    <h2 style="margin-top:0">${pinTitle}</h2>
+    <div class="dots">${[0,1,2,3].map(i=>`<i class="${i<pinBuf.length?'f':''}"></i>`).join('')}</div>
+    <div class="exp" style="min-height:20px">${pinMsg}</div>
+    <div class="pad">${[1,2,3,4,5,6,7,8,9].map(B).join('')}<span></span>${B('0')}${B('⌫')}</div>
+    ${pinCancel?`<button class="x" style="margin-top:10px" onclick="pinClose()">Bekor qilish</button>`:''}
+    ${pinForgot?`<button class="x" style="margin-top:10px;font-size:13px" onclick="forgotPin()">PIN-kodni unutdim</button>`:''}</div>`;
+}
+function pinKey(k){
+  if(k==='⌫')pinBuf=pinBuf.slice(0,-1);
+  else if(pinBuf.length<4)pinBuf+=k;
+  pinMsg='';pinDraw();
+  if(pinBuf.length===4){const p=pinBuf;setTimeout(()=>pinCb(p),150)}
+}
+function lockApp(){
+  if(!pinCfg())return;
+  const ask=msg=>pinAsk('PIN-kodni kiriting',async p=>{if(await pinOk(p))pinClose();else ask("PIN noto'g'ri")},{forgot:true,msg});
+  ask('');
+}
+function setPin(){
+  const s1=msg=>pinAsk('Yangi PIN-kod (4 raqam)',p1=>{
+    pinAsk('PIN-kodni takrorlang',async p2=>{
+      if(p1!==p2)return s1('PIN-kodlar mos kelmadi');
+      const salt=uid()+uid();
+      localStorage.setItem(PK,JSON.stringify({salt,hash:await hashPw(p1,salt)}));
+      pinClose();render();
+    },{cancel:true});
+  },{cancel:true,msg});
+  s1('');
+}
+function verifyThen(fn,msg=''){
+  pinAsk('Joriy PIN-kod',async p=>{if(await pinOk(p))fn();else verifyThen(fn,"PIN noto'g'ri")},{cancel:true,msg});
+}
+const changePin=()=>verifyThen(setPin);
+const offPin=()=>verifyThen(()=>{localStorage.removeItem(PK);pinClose();render()});
+function forgotPin(){
+  if(!confirm("Diqqat: PIN-kodni tiklab bo'lmaydi. Davom etsangiz, ilovadagi BARCHA ma'lumotlar o'chadi va PIN-kod olib tashlanadi. Zaxira nusxangiz bo'lsa, keyin tiklashingiz mumkin. Davom etamizmi?"))return;
+  if(!confirm("Ishonchingiz komilmi? Bu amalni qaytarib bo'lmaydi."))return;
+  localStorage.removeItem(K);localStorage.removeItem(PK);
+  S=load();tab='home';mp='';pinClose();render();
+}
+let hiddenAt=0;
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){hiddenAt=Date.now();return}
+  if(pinCfg()&&hiddenAt&&Date.now()-hiddenAt>30000&&!$('#lock').classList.contains('on'))lockApp();
+});
+
+/* ---------- Menyu ---------- */
+const back=()=>`<button class="x" style="padding-left:0" onclick="mp='';render()">‹ Menyu</button>`;
+function menu(){
+  if(mp==='cats')return back()+cats();
+  if(mp==='backup')return back()+backupView();
+  if(mp==='about')return back()+about();
+  const it=(k,t,s)=>`<div class="card row" onclick="mp='${k}';render()"><div><div>${t}</div><div class="mut">${s}</div></div><span class="mut">›</span></div>`;
+  const pin=pinCfg()
+    ?`<div class="card"><div class="row"><div><b>PIN-kod</b><div class="mut">Yoqilgan</div></div><button onclick="lockApp()">Qulflash</button></div>
+       <div class="row" style="margin-top:10px"><button onclick="changePin()">O'zgartirish</button><button onclick="offPin()">O'chirish</button></div></div>`
+    :`<div class="card row"><div><b>PIN-kod</b><div class="mut">Ilovaga kirishni himoyalash</div></div><button class="p" onclick="setPin()">O'rnatish</button></div>`;
+  return `<h2>Xavfsizlik</h2>${pin}<h2>Menyu</h2>${it('cats','Kategoriyalar','Harajat va kirim kategoriyalari')}${it('backup','Zaxira nusxa','Eksport va tiklash')}${it('about','Dastur haqida','Versiya va aloqa')}`;
+}
+function about(){
+  return `<div class="card"><b>Harajat</b><div class="mut">Versiya ${VER}</div></div>
+  <div class="card"><b>Taklif va shikoyatlar</b><p class="mut" style="margin:6px 0 10px">Muammo yoki taklif bo'lsa, adminga Telegram orqali yozing.</p><a class="btn" href="https://t.me/ortqshlq" target="_blank">@ortqshlq</a></div>`;
+}
+
+/* ---------- Zaxira nusxa ---------- */
+const PL={};const plug=n=>PL[n]||(PL[n]=window.Capacitor.registerPlugin(n));
+function backupView(){
+  return `<div class="card"><b>Eksport</b><p class="mut" style="margin:6px 0 10px">Ma'lumotlar fayl qilinadi. Uni Telegram, Google Drive yoki fayllar ilovasiga ulashib saqlang.</p><button class="p" onclick="exportData()">Zaxira faylini yaratish</button></div>
+  <div class="card"><b>Tiklash</b><p class="mut" style="margin:6px 0 10px">Zaxira faylini tanlang. Hozirgi barcha ma'lumotlar fayldagi bilan almashtiriladi.</p><input type="file" accept=".json,application/json" onchange="importData(this)"></div>`;
+}
+async function exportData(){
+  const json=JSON.stringify({app:'harajat',v:1,date:today(),data:S});
+  const fn='harajat-'+today()+'.json';
+  try{
+    const C=window.Capacitor;
+    if(!C||!C.isNativePlatform||!C.isNativePlatform())throw 0;
+    const r=await plug('Filesystem').writeFile({path:fn,data:json,directory:'CACHE',encoding:'utf8'});
+    await plug('Share').share({title:'Harajat zaxira nusxasi',files:[r.uri]});
+  }catch(e){
+    if(e&&e.message&&/cancel/i.test(e.message))return;
+    try{await navigator.clipboard.writeText(json);alert("Fayl yaratilmadi. Ma'lumot nusxalandi: uni biror joyga joylab saqlang.")}
+    catch(_){alert("Zaxira yaratib bo'lmadi")}
+  }
+}
+function importData(el){
+  const f=el.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const d=JSON.parse(r.result).data;
+      if(!d||!Array.isArray(d.tx)||!Array.isArray(d.debts)||!d.cats||!Array.isArray(d.cats.exp)||!Array.isArray(d.cats.inc))throw 0;
+      if(!confirm("Hozirgi ma'lumotlar fayldagi bilan almashtirilsinmi?"))return;
+      S=d;save();mp='';tab='home';render();alert("Ma'lumotlar tiklandi");
+    }catch(e){alert("Fayl noto'g'ri yoki zarar ko'rgan")}
+  };
+  r.readAsText(f);
+}
+
 render();
+lockApp();
 </script>
 </body>
 </html>
