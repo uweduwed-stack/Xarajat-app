@@ -33,13 +33,27 @@ nav button{flex:1;border:0;border-radius:0;padding:14px 4px;color:var(--mut)}nav
 .sheet{background:var(--card);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto}
 .done{opacity:.5;text-decoration:line-through}
 .empty{color:var(--mut);text-align:center;padding:18px 0}
+.bar.inc{background:var(--inc)}
+nav button{font-size:13px;padding-left:2px;padding-right:2px}
+.chart{display:flex;align-items:stretch;gap:2px;height:120px}
+.col{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center}
+.bw{flex:1;width:100%;display:flex;align-items:flex-end}
+.cb{width:100%;background:var(--exp);border-radius:3px 3px 0 0;min-height:2px;opacity:.85}
+.col span{font-size:9px;color:var(--mut);margin-top:3px}
+.amt{display:flex;gap:6px}.amt input{flex:1}.amt button{margin-top:4px;padding:0 12px;display:flex;align-items:center}
+.chk{display:flex;gap:10px;align-items:flex-start;color:var(--tx);font-size:14px;margin-top:14px}.chk input{width:22px;height:22px;margin:0;flex:none}
+.hr{border-top:1px solid var(--bd);margin-top:10px;padding-top:10px}.big{font-size:20px}
+.keys{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.keys button{padding:14px 0;font-size:20px}.keys .op{color:var(--pri);font-weight:700}.keys .z{grid-column:span 2}
+.cd{text-align:right;font-size:26px;min-height:34px;word-break:break-all}.cr{text-align:right;color:var(--mut);min-height:20px}
 </style>
 </head>
 <body>
 <main id="app"></main>
 <div id="modal"></div>
+<div id="calc"></div>
 <nav>
   <button data-t="home" onclick="go('home')">Asosiy</button>
+  <button data-t="rep" onclick="go('rep')">Hisobot</button>
   <button data-t="debts" onclick="go('debts')">Qarzlar</button>
   <button data-t="cats" onclick="go('cats')">Kategoriyalar</button>
 </nav>
@@ -52,6 +66,8 @@ const fmt=n=>Math.round(n).toLocaleString('ru-RU').replace(/\u00a0/g,' ')+" so'm
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const MONTHS=['Yanvar','Fevral','Mart','Aprel','May','Iyun','Iyul','Avgust','Sentabr','Oktabr','Noyabr','Dekabr'];
 
+const net=l=>l.reduce((s,x)=>s+(x.type==='inc'?x.amount:-x.amount),0);
+const amt=id=>`<div class="amt"><input id="${id}" type="number" inputmode="numeric" min="0"><button type="button" onclick="calcOpen('${id}')" aria-label="Kalkulyator">${CI}</button></div>`;
 function load(){
   try{const d=JSON.parse(localStorage.getItem(K));if(d&&d.tx)return d}catch(e){}
   return{tx:[],debts:[],cats:{
@@ -71,21 +87,24 @@ function close_(){$('#modal').innerHTML=''}
 
 function render(){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
-  $('#app').innerHTML=tab==='home'?home():tab==='debts'?debts():cats();
+  $('#app').innerHTML=tab==='home'?home():tab==='rep'?report():tab==='debts'?debts():cats();
 }
 
 /* ---------- Asosiy ---------- */
 function home(){
   const list=S.tx.filter(t=>t.date.startsWith(month)).sort((a,b)=>b.date.localeCompare(a.date));
-  const inc=list.filter(t=>t.type==='inc').reduce((s,t)=>s+t.amount,0);
-  const exp=list.filter(t=>t.type==='exp').reduce((s,t)=>s+t.amount,0);
-  const by={};list.filter(t=>t.type==='exp').forEach(t=>by[t.cat]=(by[t.cat]||0)+t.amount);
+  const pure=list.filter(t=>!t.debtId);
+  const inc=pure.filter(t=>t.type==='inc').reduce((s,t)=>s+t.amount,0);
+  const exp=pure.filter(t=>t.type==='exp').reduce((s,t)=>s+t.amount,0);
+  const cur=net(S.tx.filter(t=>t.date<=today()));
+  const by={};pure.filter(t=>t.type==='exp').forEach(t=>by[t.cat]=(by[t.cat]||0)+t.amount);
   const rows=Object.entries(by).sort((a,b)=>b[1]-a[1]);
   const [y,m]=month.split('-');
   return `<div class="month"><button onclick="shift(-1)">‹</button><b>${MONTHS[m-1]} ${y}</b><button onclick="shift(1)">›</button></div>
-  <div class="card"><div class="mut">Oy balansi</div>
-    <div class="bal ${inc-exp<0?'exp':''}">${fmt(inc-exp)}</div>
-    <div class="row"><span class="inc">+ ${fmt(inc)}</span><span class="exp">− ${fmt(exp)}</span></div></div>
+  <div class="card"><div class="mut">Joriy balans</div>
+    <div class="bal ${cur<0?'exp':''}">${fmt(cur)}</div>
+    <div class="row"><span class="inc">+ ${fmt(inc)}</span><span class="exp">− ${fmt(exp)}</span></div>
+    <div class="mut" style="margin-top:6px">Tanlangan oy kirimi va harajati (qarzlarsiz)</div></div>
   ${rows.length?`<h2>Harajatlar kesimi</h2>`+rows.map(([c,v])=>`<div class="card"><div class="row"><span>${esc(c)}</span><b>${fmt(v)}</b></div><div class="bar" style="width:${Math.max(4,v/exp*100)}%"></div></div>`).join(''):''}
   <h2>Operatsiyalar</h2>
   ${list.length?list.map(t=>`<div class="card row"><div><div>${esc(t.cat)}${t.note?' · '+esc(t.note):''}</div><div class="mut">${t.date}</div></div>
@@ -96,7 +115,7 @@ function txForm(type){
   const cs=S.cats[type];
   $('#modal').innerHTML=`<div class="modal" onclick="if(event.target===this)close_()"><div class="sheet">
     <div class="seg"><button class="${type==='exp'?'on':''}" onclick="txForm('exp')">Harajat</button><button class="${type==='inc'?'on':''}" onclick="txForm('inc')">Kirim</button></div>
-    <label>Summa (so'm)</label><input id="f_amt" type="number" inputmode="numeric" min="0" autofocus>
+    <label>Summa (so'm)</label>${amt('f_amt')}
     <label>Kategoriya</label><select id="f_cat">${cs.map(c=>`<option>${esc(c)}</option>`).join('')}</select>
     <label>Izoh (ixtiyoriy)</label><input id="f_note" type="text">
     <label>Sana</label><input id="f_date" type="date" value="${today()}">
@@ -110,13 +129,74 @@ function addTx(type){
 }
 function delTx(id){if(confirm("Operatsiya o'chirilsinmi?")){S.tx=S.tx.filter(t=>t.id!==id);save();render()}}
 
+/* ---------- Hisobot ---------- */
+let rp='month', rref=today();
+const ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const D0=s=>new Date(s+'T00:00:00');
+function range(){
+  const d=D0(rref);let a,b;
+  if(rp==='week'){a=new Date(d);a.setDate(d.getDate()-(d.getDay()+6)%7);b=new Date(a);b.setDate(a.getDate()+6)}
+  else if(rp==='month'){a=new Date(d.getFullYear(),d.getMonth(),1);b=new Date(d.getFullYear(),d.getMonth()+1,0)}
+  else{a=new Date(d.getFullYear(),0,1);b=new Date(d.getFullYear(),11,31)}
+  return[a,b];
+}
+function rshift(n){
+  const d=D0(rref);
+  if(rp==='week')d.setDate(d.getDate()+7*n);
+  else if(rp==='month'){d.setDate(1);d.setMonth(d.getMonth()+n)}
+  else{d.setDate(1);d.setFullYear(d.getFullYear()+n)}
+  rref=ymd(d);render();
+}
+function rset(p){rp=p;render()}
+function report(){
+  const [a,b]=range(),f=ymd(a),t=ymd(b);
+  const all=S.tx.filter(x=>x.date>=f&&x.date<=t), list=all.filter(x=>!x.debtId);
+  const sum=ty=>list.filter(x=>x.type===ty).reduce((s,x)=>s+x.amount,0);
+  const inc=sum('inc'),exp=sum('exp');
+  const dbt=net(all.filter(x=>x.debtId)), hasDbt=all.some(x=>x.debtId);
+  const open=net(S.tx.filter(x=>x.date<f)), close=open+inc-exp+dbt;
+  const grp=ty=>{const o={};list.filter(x=>x.type===ty).forEach(x=>o[x.cat]=(o[x.cat]||0)+x.amount);return Object.entries(o).sort((p,q)=>q[1]-p[1])};
+  const label=rp==='week'?f+' – '+t:rp==='month'?MONTHS[a.getMonth()]+' '+a.getFullYear():String(a.getFullYear());
+  const now=D0(today()),end=b<now?b:now;
+  const days=end<a?0:Math.round((end-a)/864e5)+1;
+  const n=rp==='week'?7:rp==='month'?b.getDate():12;
+  const lab=rp==='week'?['Du','Se','Ch','Pa','Ju','Sh','Ya']:rp==='month'?[...Array(n)].map((_,i)=>i+1):['Yan','Fev','Mar','Apr','May','Iyn','Iyl','Avg','Sen','Okt','Noy','Dek'];
+  const arr=new Array(n).fill(0);
+  list.filter(x=>x.type==='exp').forEach(x=>{
+    const i=rp==='week'?Math.round((D0(x.date)-a)/864e5):rp==='month'?+x.date.slice(8,10)-1:+x.date.slice(5,7)-1;
+    if(i>=0&&i<n)arr[i]+=x.amount;
+  });
+  const mx=Math.max(...arr,1);
+  const brk=(rows,total,cls)=>rows.length?rows.map(([c,v])=>`<div class="card"><div class="row"><span>${esc(c)}</span><span><b>${fmt(v)}</b> <span class="mut">${Math.round(v/total*100)}%</span></span></div><div class="bar ${cls}" style="width:${Math.max(4,v/total*100)}%"></div></div>`).join(''):'<div class="empty">Ma\'lumot yo\'q</div>';
+  const owe=S.debts.filter(d=>d.kind==='owe'&&!d.paid).reduce((s,d)=>s+d.amount,0);
+  const due=S.debts.filter(d=>d.kind==='due'&&!d.paid).reduce((s,d)=>s+d.amount,0);
+  const P=(k,t)=>`<button class="${rp===k?'on':''}" onclick="rset('${k}')">${t}</button>`;
+  return `<div class="seg">${P('week','Hafta')}${P('month','Oy')}${P('year','Yil')}</div>
+  <div class="month" style="margin-top:12px"><button onclick="rshift(-1)">‹</button><b>${label}</b><button onclick="rshift(1)">›</button></div>
+  <div class="card">
+    <div class="row"><span class="mut">Davr boshiga qoldiq</span><b>${fmt(open)}</b></div>
+    <div class="row" style="margin-top:6px"><span class="mut">Kirim</span><b class="inc">+ ${fmt(inc)}</b></div>
+    <div class="row" style="margin-top:6px"><span class="mut">Chiqim</span><b class="exp">− ${fmt(exp)}</b></div>
+    ${hasDbt?`<div class="row" style="margin-top:6px"><span class="mut">Qarz va haqlar</span><b class="${dbt<0?'exp':'inc'}">${dbt<0?'−':'+'} ${fmt(Math.abs(dbt))}</b></div>`:''}
+    <div class="row hr"><span>Davr oxiriga qoldiq</span><b class="big ${close<0?'exp':''}">${fmt(close)}</b></div>
+    <div class="mut" style="margin-top:8px">Kunlik o'rtacha chiqim: ${fmt(days?exp/days:0)}</div></div>
+  <h2>Harajat dinamikasi</h2>
+  <div class="card"><div class="chart">${arr.map((v,i)=>`<div class="col"><div class="bw"><div class="cb" style="height:${v/mx*100}%"></div></div><span>${lab[i]}</span></div>`).join('')}</div></div>
+  <h2>Harajatlar kesimi</h2>${brk(grp('exp'),exp||1,'')}
+  <h2>Kirimlar kesimi</h2>${brk(grp('inc'),inc||1,'inc')}
+  <h2>Qarzlar holati</h2>
+  <div class="card row"><span class="mut">Qarzlarim</span><b class="exp">${fmt(owe)}</b></div>
+  <div class="card row"><span class="mut">Haqlarim</span><b class="inc">${fmt(due)}</b></div>
+  <div class="card row"><span class="mut">Sof holat</span><b class="${due-owe<0?'exp':'inc'}">${fmt(due-owe)}</b></div>`;
+}
+
 /* ---------- Qarzlar ---------- */
 function debts(){
   const sec=(kind,title)=>{
     const l=S.debts.filter(d=>d.kind===kind).sort((a,b)=>a.paid-b.paid||a.date.localeCompare(b.date));
     const sum=l.filter(d=>!d.paid).reduce((s,d)=>s+d.amount,0);
     return `<h2>${title}</h2><div class="card row"><span class="mut">Qoldiq</span><b class="${kind==='owe'?'exp':'inc'}">${fmt(sum)}</b></div>`+
-    (l.length?l.map(d=>`<div class="card"><div class="row"><div class="${d.paid?'done':''}"><b>${esc(d.person)}</b><div class="mut">${d.date}${d.note?' · '+esc(d.note):''}</div></div><b class="${d.paid?'done':''}">${fmt(d.amount)}</b></div>
+    (l.length?l.map(d=>`<div class="card"><div class="row"><div class="${d.paid?'done':''}"><b>${esc(d.person)}</b><div class="mut">${d.date}${d.note?' · '+esc(d.note):''}${S.tx.some(t=>t.debtId===d.id)?' · balansda':''}</div></div><b class="${d.paid?'done':''}">${fmt(d.amount)}</b></div>
       <div class="row" style="margin-top:8px"><button onclick="togglePaid('${d.id}')">${d.paid?'Qaytarish':(kind==='owe'?"To'landi":'Qaytarildi')}</button><button class="x" onclick="delDebt('${d.id}')">×</button></div></div>`).join(''):'<div class="empty">Ro\'yxat bo\'sh</div>');
   };
   return sec('owe','Qarzlarim (men berishim kerak)')+sec('due','Haqlarim (menga qaytarishi kerak)')+`<button class="p fab" onclick="debtForm('owe')">+</button>`;
@@ -125,20 +205,39 @@ function debtForm(kind){
   $('#modal').innerHTML=`<div class="modal" onclick="if(event.target===this)close_()"><div class="sheet">
     <div class="seg"><button class="${kind==='owe'?'on':''}" onclick="debtForm('owe')">Qarzim</button><button class="${kind==='due'?'on':''}" onclick="debtForm('due')">Haqim</button></div>
     <label>Kim bilan</label><input id="d_p" type="text">
-    <label>Summa (so'm)</label><input id="d_amt" type="number" inputmode="numeric" min="0">
+    <label>Summa (so'm)</label>${amt('d_amt')}
     <label>Izoh (ixtiyoriy)</label><input id="d_note" type="text">
     <label>Sana</label><input id="d_date" type="date" value="${today()}">
+    <label class="chk"><input type="checkbox" id="d_aff"><span>${kind==='owe'?"Balansga qo'shilsin (qarz olingan pul menga tushdi)":"Balansdan ayirilsin (qarz berilgan pul mendan chiqdi)"}</span></label>
+    <div class="mut" style="margin-top:4px">Qarz eski bo'lsa yoki pul allaqachon hisobda bo'lsa, belgilamang.</div>
     <div class="row" style="margin-top:14px"><button onclick="close_()">Bekor qilish</button><button class="p" onclick="addDebt('${kind}')">Saqlash</button></div></div></div>`;
 }
 function addDebt(kind){
   const person=$('#d_p').value.trim(),amount=+$('#d_amt').value;
   if(!person)return alert("Ismni kiriting");
   if(!(amount>0))return alert("Summani kiriting");
-  S.debts.push({id:uid(),kind,person,amount,note:$('#d_note').value.trim(),date:$('#d_date').value||today(),paid:false});
+  const d={id:uid(),kind,person,amount,note:$('#d_note').value.trim(),date:$('#d_date').value||today(),paid:false};
+  S.debts.push(d);
+  if($('#d_aff').checked)S.tx.push({id:uid(),debtId:d.id,type:kind==='owe'?'inc':'exp',amount,cat:kind==='owe'?'Qarz olindi':'Qarz berildi',note:person,date:d.date});
   save();close_();render();
 }
-function togglePaid(id){const d=S.debts.find(x=>x.id===id);d.paid=!d.paid;save();render()}
-function delDebt(id){if(confirm("Yozuv o'chirilsinmi?")){S.debts=S.debts.filter(d=>d.id!==id);save();render()}}
+function togglePaid(id){
+  const d=S.debts.find(x=>x.id===id);
+  if(d.paid){S.tx=S.tx.filter(t=>!(t.debtId===id&&t.settle));d.paid=false;save();render();return}
+  const back=d.kind==='due';
+  $('#modal').innerHTML=`<div class="modal" onclick="if(event.target===this)close_()"><div class="sheet">
+    <b>Balansga ta'sir qilsinmi?</b>
+    <p class="mut" style="margin:8px 0 14px">${esc(d.person)}: ${fmt(d.amount)}. ${back?"Haq qaytdi: balansga qo'shiladi.":"Qarz to'landi: balansdan ayiriladi."}</p>
+    <button class="p" style="width:100%" onclick="settle('${id}',1)">Ha, balansda hisobga olinsin</button>
+    <button style="width:100%;margin-top:8px" onclick="settle('${id}',0)">Yo'q, faqat belgilansin</button>
+    <button class="x" style="width:100%;margin-top:4px" onclick="close_()">Bekor qilish</button></div></div>`;
+}
+function settle(id,aff){
+  const d=S.debts.find(x=>x.id===id);d.paid=true;
+  if(aff)S.tx.push({id:uid(),debtId:id,settle:true,type:d.kind==='due'?'inc':'exp',amount:d.amount,cat:d.kind==='due'?'Haq qaytdi':"Qarz to'landi",note:d.person,date:today()});
+  save();close_();render();
+}
+function delDebt(id){if(confirm("Yozuv va unga bog'liq balans operatsiyalari o'chirilsinmi?")){S.debts=S.debts.filter(d=>d.id!==id);S.tx=S.tx.filter(t=>t.debtId!==id);save();render()}}
 
 /* ---------- Kategoriyalar ---------- */
 function cats(){
@@ -155,6 +254,50 @@ function addCat(){
 function delCat(i){
   if(S.cats[catType].length<2)return alert("Kamida bitta kategoriya qolishi kerak");
   if(confirm("Kategoriya o'chirilsinmi? Eski operatsiyalar saqlanadi.")){S.cats[catType].splice(i,1);save();render()}
+}
+
+/* ---------- Kalkulyator ---------- */
+const CI='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M8 6h8M8 11h2M14 11h2M8 15h2M14 15h2M8 19h2M14 19h2"/></svg>';
+let cf='',ce='';
+function cval(s){
+  let x=s.replace(/×/g,'*').replace(/÷/g,'/').replace(/−/g,'-');
+  if(!x.trim()||!/^[0-9+\-*\/.\s]+$/.test(x))throw 0;
+  x=x.replace(/(^|[^0-9.])0+(?=[0-9])/g,'$1');
+  const v=Function('"use strict";return('+x+')')();
+  if(!isFinite(v))throw 0;return v;
+}
+function calcOpen(id){
+  cf=id;ce=$('#'+id).value||'';
+  const B=(t,c='')=>`<button class="${c}" onclick="cp('${t}')">${t}</button>`;
+  $('#calc').innerHTML=`<div class="modal" style="z-index:20" onclick="if(event.target===this)calcClose()"><div class="sheet">
+    <div class="cd" id="c_e"></div><div class="cr" id="c_r"></div>
+    <div class="keys">${B('C','op')}${B('⌫','op')}${B('÷','op')}${B('×','op')}${B('7')}${B('8')}${B('9')}${B('−','op')}${B('4')}${B('5')}${B('6')}${B('+','op')}${B('1')}${B('2')}${B('3')}${B('=','op')}${B('0','z')}${B('00')}${B('.')}</div>
+    <div class="row" style="margin-top:12px"><button onclick="calcClose()">Yopish</button><button class="p" onclick="calcApply()">Summaga qo'llash</button></div></div></div>`;
+  cdraw();
+}
+function calcClose(){$('#calc').innerHTML=''}
+function cp(k){
+  const ops='+−×÷';
+  if(k==='C')ce='';
+  else if(k==='⌫')ce=ce.slice(0,-1);
+  else if(k==='='){try{ce=String(Math.round(cval(ce)*100)/100)}catch(e){}}
+  else if(ops.includes(k)){
+    if(!ce&&k!=='−')return;
+    if(ops.includes(ce.slice(-1)))ce=ce.slice(0,-1);
+    ce+=k;
+  }else ce+=k;
+  cdraw();
+}
+function cdraw(){
+  $('#c_e').textContent=ce||'0';
+  let r='';
+  try{r='= '+(Math.round(cval(ce)*100)/100).toLocaleString('ru-RU')}catch(e){}
+  $('#c_r').textContent=/[+−×÷]/.test(ce)?r:'';
+}
+function calcApply(){
+  let v;try{v=Math.round(cval(ce))}catch(e){return alert("Ifoda noto'g'ri")}
+  if(!(v>0))return alert("Natija noldan katta bo'lishi kerak");
+  $('#'+cf).value=v;calcClose();
 }
 
 render();
