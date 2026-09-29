@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Harajat</title>
+<style>
+:root{--bg:#eceff4;--card:#fff;--tx:#0d1b2a;--mut:#64748b;--pri:#1d4ed8;--exp:#d9480f;--inc:#2b8a3e;--bd:#dde3ec}
+@media(prefers-color-scheme:dark){:root{--bg:#0b1220;--card:#131c2e;--tx:#e6ebf3;--mut:#8b99ae;--pri:#6b9bff;--exp:#ff8a5c;--inc:#5fd07a;--bd:#22304a}}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+body{font:15px system-ui,-apple-system,Roboto,sans-serif;background:var(--bg);color:var(--tx);padding:env(safe-area-inset-top) 0 calc(76px + env(safe-area-inset-bottom));font-variant-numeric:tabular-nums}
+main{max-width:520px;margin:0 auto;padding:14px}
+h2{font-size:17px;margin:18px 0 8px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:8px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.mut{color:var(--mut);font-size:13px}
+.exp{color:var(--exp)}.inc{color:var(--inc)}
+.bal{font-size:34px;font-weight:700;letter-spacing:-.02em;margin:2px 0 10px}
+.month{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.month button{width:40px;height:40px;font-size:20px}
+button,input,select{font:inherit;color:inherit}
+button{background:none;border:1px solid var(--bd);border-radius:10px;padding:8px 12px;cursor:pointer}
+button.p{background:var(--pri);border-color:var(--pri);color:#fff;font-weight:600}
+button.x{border:0;color:var(--mut);padding:6px 10px;font-size:18px}
+input,select{width:100%;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:11px;margin-top:4px}
+label{display:block;margin-top:10px;font-size:13px;color:var(--mut)}
+.seg{display:flex;gap:6px;margin-top:6px}.seg button{flex:1}.seg .on{background:var(--pri);color:#fff;border-color:var(--pri)}
+.bar{height:6px;border-radius:3px;background:var(--exp);margin-top:6px;opacity:.85}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--bd);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;border:0;border-radius:0;padding:14px 4px;color:var(--mut)}nav .on{color:var(--pri);font-weight:700}
+.fab{position:fixed;right:18px;bottom:calc(76px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:28px;font-size:28px;padding:0;box-shadow:0 4px 14px #0004}
+.modal{position:fixed;inset:0;background:#0009;display:flex;align-items:flex-end;justify-content:center;z-index:9}
+.sheet{background:var(--card);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto}
+.done{opacity:.5;text-decoration:line-through}
+.empty{color:var(--mut);text-align:center;padding:18px 0}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div id="modal"></div>
+<nav>
+  <button data-t="home" onclick="go('home')">Asosiy</button>
+  <button data-t="debts" onclick="go('debts')">Qarzlar</button>
+  <button data-t="cats" onclick="go('cats')">Kategoriyalar</button>
+</nav>
+<script>
+const K='harajat_v1';
+const $=s=>document.querySelector(s);
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
+const fmt=n=>Math.round(n).toLocaleString('ru-RU').replace(/\u00a0/g,' ')+" so'm";
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const MONTHS=['Yanvar','Fevral','Mart','Aprel','May','Iyun','Iyul','Avgust','Sentabr','Oktabr','Noyabr','Dekabr'];
+
+function load(){
+  try{const d=JSON.parse(localStorage.getItem(K));if(d&&d.tx)return d}catch(e){}
+  return{tx:[],debts:[],cats:{
+    exp:['Oziq-ovqat','Transport','Aloqa','Uy-joy','Kiyim',"Sog'liq",'Boshqa'],
+    inc:['Oylik','Bonus','Boshqa']}};
+}
+function save(){try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}}
+let S=load(), tab='home', month=today().slice(0,7), catType='exp';
+
+function go(t){tab=t;render()}
+function shift(d){
+  let [y,m]=month.split('-').map(Number);m+=d;
+  if(m<1){m=12;y--}if(m>12){m=1;y++}
+  month=y+'-'+String(m).padStart(2,'0');render();
+}
+function close_(){$('#modal').innerHTML=''}
+
+function render(){
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
+  $('#app').innerHTML=tab==='home'?home():tab==='debts'?debts():cats();
+}
+
+/* ---------- Asosiy ---------- */
+function home(){
+  const list=S.tx.filter(t=>t.date.startsWith(month)).sort((a,b)=>b.date.localeCompare(a.date));
+  const inc=list.filter(t=>t.type==='inc').reduce((s,t)=>s+t.amount,0);
+  const exp=list.filter(t=>t.type==='exp').reduce((s,t)=>s+t.amount,0);
+  const by={};list.filter(t=>t.type==='exp').forEach(t=>by[t.cat]=(by[t.cat]||0)+t.amount);
+  const rows=Object.entries(by).sort((a,b)=>b[1]-a[1]);
+  const [y,m]=month.split('-');
+  return `<div class="month"><button onclick="shift(-1)">‹</button><b>${MONTHS[m-1]} ${y}</b><button onclick="shift(1)">›</button></div>
+  <div class="card"><div class="mut">Oy balansi</div>
+    <div class="bal ${inc-exp<0?'exp':''}">${fmt(inc-exp)}</div>
+    <div class="row"><span class="inc">+ ${fmt(inc)}</span><span class="exp">− ${fmt(exp)}</span></div></div>
+  ${rows.length?`<h2>Harajatlar kesimi</h2>`+rows.map(([c,v])=>`<div class="card"><div class="row"><span>${esc(c)}</span><b>${fmt(v)}</b></div><div class="bar" style="width:${Math.max(4,v/exp*100)}%"></div></div>`).join(''):''}
+  <h2>Operatsiyalar</h2>
+  ${list.length?list.map(t=>`<div class="card row"><div><div>${esc(t.cat)}${t.note?' · '+esc(t.note):''}</div><div class="mut">${t.date}</div></div>
+    <div class="row"><b class="${t.type}">${t.type==='exp'?'−':'+'}${fmt(t.amount)}</b><button class="x" onclick="delTx('${t.id}')">×</button></div></div>`).join(''):'<div class="empty">Bu oyda operatsiya yo\'q. «+» tugmasi bilan qo\'shing.</div>'}
+  <button class="p fab" onclick="txForm('exp')">+</button>`;
+}
+function txForm(type){
+  const cs=S.cats[type];
+  $('#modal').innerHTML=`<div class="modal" onclick="if(event.target===this)close_()"><div class="sheet">
+    <div class="seg"><button class="${type==='exp'?'on':''}" onclick="txForm('exp')">Harajat</button><button class="${type==='inc'?'on':''}" onclick="txForm('inc')">Kirim</button></div>
+    <label>Summa (so'm)</label><input id="f_amt" type="number" inputmode="numeric" min="0" autofocus>
+    <label>Kategoriya</label><select id="f_cat">${cs.map(c=>`<option>${esc(c)}</option>`).join('')}</select>
+    <label>Izoh (ixtiyoriy)</label><input id="f_note" type="text">
+    <label>Sana</label><input id="f_date" type="date" value="${today()}">
+    <div class="row" style="margin-top:14px"><button onclick="close_()">Bekor qilish</button><button class="p" onclick="addTx('${type}')">Saqlash</button></div></div></div>`;
+}
+function addTx(type){
+  const amount=+$('#f_amt').value;
+  if(!(amount>0))return alert("Summani kiriting");
+  S.tx.push({id:uid(),type,amount,cat:$('#f_cat').value,note:$('#f_note').value.trim(),date:$('#f_date').value||today()});
+  save();close_();render();
+}
+function delTx(id){if(confirm("Operatsiya o'chirilsinmi?")){S.tx=S.tx.filter(t=>t.id!==id);save();render()}}
+
+/* ---------- Qarzlar ---------- */
+function debts(){
+  const sec=(kind,title)=>{
+    const l=S.debts.filter(d=>d.kind===kind).sort((a,b)=>a.paid-b.paid||a.date.localeCompare(b.date));
+    const sum=l.filter(d=>!d.paid).reduce((s,d)=>s+d.amount,0);
+    return `<h2>${title}</h2><div class="card row"><span class="mut">Qoldiq</span><b class="${kind==='owe'?'exp':'inc'}">${fmt(sum)}</b></div>`+
+    (l.length?l.map(d=>`<div class="card"><div class="row"><div class="${d.paid?'done':''}"><b>${esc(d.person)}</b><div class="mut">${d.date}${d.note?' · '+esc(d.note):''}</div></div><b class="${d.paid?'done':''}">${fmt(d.amount)}</b></div>
+      <div class="row" style="margin-top:8px"><button onclick="togglePaid('${d.id}')">${d.paid?'Qaytarish':(kind==='owe'?"To'landi":'Qaytarildi')}</button><button class="x" onclick="delDebt('${d.id}')">×</button></div></div>`).join(''):'<div class="empty">Ro\'yxat bo\'sh</div>');
+  };
+  return sec('owe','Qarzlarim (men berishim kerak)')+sec('due','Haqlarim (menga qaytarishi kerak)')+`<button class="p fab" onclick="debtForm('owe')">+</button>`;
+}
+function debtForm(kind){
+  $('#modal').innerHTML=`<div class="modal" onclick="if(event.target===this)close_()"><div class="sheet">
+    <div class="seg"><button class="${kind==='owe'?'on':''}" onclick="debtForm('owe')">Qarzim</button><button class="${kind==='due'?'on':''}" onclick="debtForm('due')">Haqim</button></div>
+    <label>Kim bilan</label><input id="d_p" type="text">
+    <label>Summa (so'm)</label><input id="d_amt" type="number" inputmode="numeric" min="0">
+    <label>Izoh (ixtiyoriy)</label><input id="d_note" type="text">
+    <label>Sana</label><input id="d_date" type="date" value="${today()}">
+    <div class="row" style="margin-top:14px"><button onclick="close_()">Bekor qilish</button><button class="p" onclick="addDebt('${kind}')">Saqlash</button></div></div></div>`;
+}
+function addDebt(kind){
+  const person=$('#d_p').value.trim(),amount=+$('#d_amt').value;
+  if(!person)return alert("Ismni kiriting");
+  if(!(amount>0))return alert("Summani kiriting");
+  S.debts.push({id:uid(),kind,person,amount,note:$('#d_note').value.trim(),date:$('#d_date').value||today(),paid:false});
+  save();close_();render();
+}
+function togglePaid(id){const d=S.debts.find(x=>x.id===id);d.paid=!d.paid;save();render()}
+function delDebt(id){if(confirm("Yozuv o'chirilsinmi?")){S.debts=S.debts.filter(d=>d.id!==id);save();render()}}
+
+/* ---------- Kategoriyalar ---------- */
+function cats(){
+  return `<div class="seg"><button class="${catType==='exp'?'on':''}" onclick="catType='exp';render()">Harajat</button><button class="${catType==='inc'?'on':''}" onclick="catType='inc';render()">Kirim</button></div>
+  <h2>Kategoriyalar</h2>
+  ${S.cats[catType].map((c,i)=>`<div class="card row"><span>${esc(c)}</span><button class="x" onclick="delCat(${i})">×</button></div>`).join('')||'<div class="empty">Kategoriya yo\'q</div>'}
+  <label>Yangi kategoriya</label><div class="row"><input id="c_new" type="text"><button class="p" onclick="addCat()">Qo'shish</button></div>`;
+}
+function addCat(){
+  const v=$('#c_new').value.trim();if(!v)return;
+  if(S.cats[catType].includes(v))return alert("Bunday kategoriya bor");
+  S.cats[catType].push(v);save();render();
+}
+function delCat(i){
+  if(S.cats[catType].length<2)return alert("Kamida bitta kategoriya qolishi kerak");
+  if(confirm("Kategoriya o'chirilsinmi? Eski operatsiyalar saqlanadi.")){S.cats[catType].splice(i,1);save();render()}
+}
+
+render();
+</script>
+</body>
+</html>
