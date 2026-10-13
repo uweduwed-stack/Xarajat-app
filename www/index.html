@@ -74,8 +74,8 @@ const MONTHS=['Yanvar','Fevral','Mart','Aprel','May','Iyun','Iyul','Avgust','Sen
 const net=l=>l.reduce((s,x)=>s+(x.type==='inc'?x.amount:-x.amount),0);
 const amt=(id,v='')=>`<div class="amt"><input id="${id}" type="number" inputmode="numeric" min="0" value="${v}"><button type="button" onclick="calcOpen('${id}')" aria-label="Kalkulyator">${CI}</button></div>`;
 function load(){
-  try{const d=JSON.parse(localStorage.getItem(K));if(d&&d.tx){d.budget=d.budget||0;d.asset=d.asset||0;d.snap=d.snap||{};d.pin=d.pin||'';d.debts=d.debts||[];d.debts.forEach(x=>{if(x.pa==null)x.pa=x.paid?x.amount:0});return d}}catch(e){}
-  return{budget:0,asset:0,snap:{},pin:'',tx:[],debts:[],cats:{
+  try{const d=JSON.parse(localStorage.getItem(K));if(d&&d.tx){d.budget=d.budget||0;d.asset=d.asset||0;d.snap=d.snap||{};d.pin=d.pin||'';d.debts=d.debts||[];d.goals=d.goals||[];d.grp=d.grp||{};d.debts.forEach(x=>{if(x.pa==null)x.pa=x.paid?x.amount:0});return d}}catch(e){}
+  return{budget:0,asset:0,snap:{},pin:'',tx:[],debts:[],goals:[],grp:{},cats:{
     exp:['Oziq-ovqat','Transport','Aloqa','Uy-joy','Kiyim',"Sog'liq",'Boshqa'],
     inc:['Oylik','Bonus','Boshqa']}};
 }
@@ -91,13 +91,13 @@ function shift(d){
 function close_(){$('#modal').innerHTML=''}
 
 function render(){
-  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===(tab==='cats'||tab==='kpi'||tab==='help'?'menu':tab)));
-  $('#app').innerHTML=tab==='home'?home():tab==='rep'?report():tab==='debts'?debts():tab==='menu'?menu():tab==='kpi'?kpi():tab==='help'?help():cats();
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===(['cats','kpi','help','ana','cf','goals'].includes(tab)?'menu':tab)));
+  $('#app').innerHTML=tab==='home'?home():tab==='rep'?report():tab==='debts'?debts():tab==='menu'?menu():tab==='kpi'?kpi():tab==='help'?help():tab==='ana'?ana():tab==='cf'?cflow():tab==='goals'?goals():cats();
   if(tab==='home')hl();
 }
 
 /* ---------- Asosiy ---------- */
-const V='1.3.0';
+const V='1.4.0';
 let HF={q:'',cat:''},ED=null,skipLock=false;
 const rem=d=>d.paid?0:d.amount-(d.pa||0);
 const sheet=h=>`<div class="modal" onclick="if(event.target===this)close_()"><div class="sheet">${h}</div></div>`;
@@ -136,14 +136,15 @@ function hl(){
 }
 function txForm(type,id,keep){
   let d;
-  if(keep)d={amount:$('#f_amt').value,cat:'',note:$('#f_note').value,date:$('#f_date').value};
-  else if(id){const t=S.tx.find(x=>x.id===id);type=t.type;d={amount:t.amount,cat:t.cat,note:t.note||'',date:t.date}}
-  else d={amount:'',cat:'',note:'',date:today()};
+  if(keep)d={amount:$('#f_amt').value,cat:'',note:$('#f_note').value,date:$('#f_date').value,src:''};
+  else if(id){const t=S.tx.find(x=>x.id===id);type=t.type;d={amount:t.amount,cat:t.cat,note:t.note||'',date:t.date,src:t.src||''}}
+  else d={amount:'',cat:'',note:'',date:today(),src:''};
   ED=id||null;
   const cs=S.cats[type].slice();if(d.cat&&!cs.includes(d.cat))cs.push(d.cat);
   $('#modal').innerHTML=sheet(`<div class="seg"><button class="${type==='exp'?'on':''}" onclick="txForm('exp',ED,1)">Harajat</button><button class="${type==='inc'?'on':''}" onclick="txForm('inc',ED,1)">Kirim</button></div>
     <label>Summa (so’m)</label>${amt('f_amt',d.amount)}
     <label>Kategoriya</label><select id="f_cat">${cs.map(c=>`<option ${c===d.cat?'selected':''}>${esc(c)}</option>`).join('')}</select>
+    ${type==='exp'?`<label>Qaysi daromad manbasi uchun? (ixtiyoriy)</label><select id="f_src"><option value="">—</option>${S.cats.inc.map(c=>`<option ${c===d.src?'selected':''}>${esc(c)}</option>`).join('')}</select>`:''}
     <label>Izoh (ixtiyoriy)</label><input id="f_note" type="text" value="${esc(d.note)}">
     <label>Sana</label><input id="f_date" type="date" value="${d.date||today()}">
     <div class="row" style="margin-top:14px"><button onclick="close_()">Bekor qilish</button><button class="p" onclick="addTx('${type}')">Saqlash</button></div>`);
@@ -151,7 +152,7 @@ function txForm(type,id,keep){
 function addTx(type){
   const amount=+$('#f_amt').value;
   if(!(amount>0))return alert("Summani kiriting");
-  const o={type,amount,cat:$('#f_cat').value,note:$('#f_note').value.trim(),date:$('#f_date').value||today()};
+  const o={type,amount,cat:$('#f_cat').value,note:$('#f_note').value.trim(),date:$('#f_date').value||today(),src:$('#f_src')?$('#f_src').value:''};
   if(ED){Object.assign(S.tx.find(x=>x.id===ED),o)}else S.tx.push({id:uid(),...o});
   save();close_();render();if(type==='exp')bcheck(o.date);
 }
@@ -321,7 +322,10 @@ function help(){
   const top=Object.entries(by).sort((a,b)=>b[1]-a[1])[0];
   let d=new Date();const ex=[1,2,3].map(()=>{d=new Date(d.getFullYear(),d.getMonth()-1,1);const m=ymd(d).slice(0,7);return sm(S.tx.filter(t=>!t.debtId&&t.date.startsWith(m)),'exp')}).filter(v=>v>0);
   const avg=ex.length?ex.reduce((a,b)=>a+b,0)/ex.length:exp,res=avg>0?Math.max(cur,0)/avg:null;
+  const G='var(--inc)',Y='#e8a317',R='var(--exp)',sc=(t,v,c)=>`<div style="flex:1;text-align:center"><div class="mut" style="font-size:12px">${t}</div><b style="color:${c}">${v}</b></div>`;
+  const ST=`<div class="card row" style="gap:4px">${sc('Sof oqim',flow>=0?'● Musbat':'● Manfiy',flow>=0?G:R)}${sc('Jamg’arma',rate==null?'—':'● '+rate.toFixed(0)+'%',rate==null?'var(--mut)':rate>=20?G:rate>=10?Y:R)}${sc('Qarz yuki',dti==null?'—':'● '+dti.toFixed(0)+'%',dti==null?'var(--mut)':dti<=30?G:dti<=35?Y:R)}</div><div class="row" style="gap:6px;margin-bottom:8px"><button style="flex:1" onclick="go('ana')">Tahlil</button><button style="flex:1" onclick="go('cf')">Cash flow</button><button style="flex:1" onclick="go('goals')">Maqsadlar</button></div>`;
   const A=[];
+  if(S.budget>0&&exp<S.budget){const dd=new Date(),lf=new Date(dd.getFullYear(),dd.getMonth()+1,0).getDate()-dd.getDate()+1;A.push(`Kunlik limit: oy oxirigacha kuniga ${fmt((S.budget-exp)/lf)} sarflash mumkin (${lf} kun qoldi).`)}
   if(!inc)A.push('Bu oy kirim kiritilmagan, shu sabab foizli ko’rsatkichlar hisoblanmaydi. Oylik va boshqa tushumlarni kiriting.');
   if(flow<0)A.push(`Sof oqim manfiy: daromaddan ${fmt(-flow)} ko’p sarflangan.${top?` Eng katta harajat: ${esc(top[0])} (${fmt(top[1])}). Avval shuni qisqartirishni ko’ring.`:''}`);
   else if(rate!=null&&rate<10)A.push(`Jamg’arma darajasi ${rate.toFixed(1)}%, minimal me’yor 10%. Daromad tushishi bilan jamg’arma ulushini darhol ajrating.${top?` Eng katta harajat: ${esc(top[0])}.`:''}`);
@@ -334,7 +338,7 @@ function help(){
   if(res!=null)A.push(res<3?`Favqulodda zaxira: balans taxminan ${res.toFixed(1)} oylik harajatni qoplaydi. Maqsad 3–6 oy, balansni oshiring.`:`Favqulodda zaxira: balans taxminan ${res.toFixed(1)} oylik harajatni qoplaydi. Maqsad (3–6 oy) bajarilgan.`);
   if(owe>0&&inc>0&&owe>inc*3)A.push(`Umumiy qarz qoldig’i (${fmt(owe)}) 3 oylik daromaddan oshadi. To’lov jadvali tuzing.`);
   const C=(t,b)=>`<div class="card"><b>${t}</b><div class="mut" style="margin-top:6px;line-height:1.5">${b}</div></div>`;
-  return `<button onclick="go('menu')" style="margin-bottom:10px">‹ Menyu</button><h2>Yordamchi xulosasi (shu oy)</h2>`+
+  return `<button onclick="go('menu')" style="margin-bottom:10px">‹ Menyu</button><h2>Yordamchi xulosasi (shu oy)</h2>${ST}`+
   (A.length?A.map(x=>`<div class="card">${x}</div>`).join(''):'<div class="card">Hozircha ma’lumot yetarli emas. Kirim va harajatlarni kiriting.</div>')+
   `<h2>Instruksiya</h2>`+
   C('Har kuni','Har bir kirim-chiqimni shu kuni kiriting va kategoriyani to’g’ri tanlang. Kiritilmagan harajat ko’rsatkichlarni buzadi.')+
@@ -344,6 +348,78 @@ function help(){
   C('Har chorakda','Sof boylik o’sishi va jamg’arma maqsadini tekshiring, Menyu → Eksport orqali zaxira nusxa oling.')+
   C('Me’yorlar','Jamg’arma: kamida 10%, ideal 20%+. Qarz yuki (DTI): 30–35% dan oshmasin. Zaxira: 3–6 oylik harajat.');
 }
+
+/* ---------- Tahlil, Cash flow, Maqsadlar (v1.4) ---------- */
+const back=`<button onclick="go('menu')" style="margin-bottom:10px">‹ Menyu</button>`;
+const mnav=()=>`<div class="month"><button onclick="shift(-1)">‹</button><b>${MONTHS[+month.slice(5)-1]} ${month.slice(0,4)}</b><button onclick="shift(1)">›</button></div>`;
+const mAdd=(ym,n)=>{let[y,m]=ym.split('-').map(Number);m+=n;while(m<1){m+=12;y--}while(m>12){m-=12;y++}return y+'-'+String(m).padStart(2,'0')};
+const mTx=(ym,ty,mxd)=>S.tx.filter(t=>!t.debtId&&t.type===ty&&t.date.startsWith(ym)&&(!mxd||+t.date.slice(8,10)<=mxd));
+const sumA=l=>l.reduce((s,t)=>s+t.amount,0);
+const byCat=l=>{const o={};l.forEach(t=>o[t.cat]=(o[t.cat]||0)+t.amount);return o};
+const chg=(c,p,inv)=>p>0?`<b style="color:${(c>=p)!==!!inv?'var(--inc)':'var(--exp)'}">${c>=p?'▲':'▼'} ${Math.abs(Math.round((c-p)/p*100))}%</b>`:(c>0?'<b class="mut">yangi</b>':'');
+const GI=[['z','Zarur'],['m','Muhim'],['i','Ixtiyoriy']];let GL=[];
+function setGrp(i,v){S.grp[GL[i]]=v;save();render()}
+function ana(){
+  const pm=mAdd(month,-1),td=today(),cd=month===td.slice(0,7)?+td.slice(8,10):0;
+  const cu=byCat(mTx(month,'exp',cd)),pv=byCat(mTx(pm,'exp',cd)),tc=sumA(mTx(month,'exp',cd)),tp=sumA(mTx(pm,'exp',cd));
+  const cs=[...new Set([...Object.keys(cu),...Object.keys(pv)])].sort((a,b)=>(cu[b]||0)+(pv[b]||0)-(cu[a]||0)-(pv[a]||0));
+  const mx=Math.max(...cs.map(c=>Math.max(cu[c]||0,pv[c]||0)),1),df=tc-tp;
+  const ms=[-5,-4,-3,-2,-1,0].map(n=>mAdd(month,n)),E=ms.map(m=>sumA(mTx(m,'exp'))),em=Math.max(...E,1);
+  const top=mTx(month,'exp',0).sort((a,b)=>b.amount-a.amount).slice(0,5);
+  return back+mnav()+`<div class="card"><div class="mut">Jami xarajat ${cd?`(1–${cd}-kun, o’tgan oyning shu kunlari bilan)`:'(to’liq oy)'}</div>
+   <div class="row" style="margin-top:6px"><span class="mut">O’tgan oy</span><b>${fmt(tp)}</b></div><div class="row" style="margin-top:4px"><span class="mut">Shu oy</span><b class="exp">${fmt(tc)}</b></div>
+   <div class="row hr"><span>O’zgarish</span><b class="big" style="color:${df>0?'var(--exp)':'var(--inc)'}">${tp?(df>0?'▲ +':'▼ −')+fmt(Math.abs(df)):'—'}</b></div></div>
+  <h2>6 oylik xarajat</h2><div class="card"><div class="chart">${E.map((v,i)=>`<div class="col"><div class="bw"><div class="cb" style="height:${v/em*100}%;${i===5?'':'opacity:.5'}"></div></div><span>${MONTHS[+ms[i].slice(5)-1].slice(0,3)}</span></div>`).join('')}</div></div>
+  <h2>Kategoriyalar: o’tgan oy va shu oy</h2>`+(cs.length?cs.map(c=>`<div class="card"><div class="row"><span>${esc(c)}</span>${chg(cu[c]||0,pv[c]||0,1)}</div>
+   <div class="row mut" style="margin-top:6px"><span>O’tgan oy</span><span>${fmt(pv[c]||0)}</span></div><div class="bar" style="width:${Math.max(2,(pv[c]||0)/mx*100)}%;background:var(--mut)"></div>
+   <div class="row mut" style="margin-top:6px"><span>Shu oy</span><b class="exp">${fmt(cu[c]||0)}</b></div><div class="bar" style="width:${Math.max(2,(cu[c]||0)/mx*100)}%"></div></div>`).join(''):'<div class="empty">Ma’lumot yo’q</div>')+
+  `<h2>Eng katta 5 xarajat</h2>`+(top.length?top.map(t=>`<div class="card row"><div>${esc(t.cat)}${t.note?' · '+esc(t.note):''}<div class="mut">${t.date}</div></div><b class="exp">${fmt(t.amount)}</b></div>`).join(''):'<div class="empty">Ma’lumot yo’q</div>');
+}
+function cflow(){
+  const td=today(),isC=month===td.slice(0,7),ms=[-5,-4,-3,-2,-1,0].map(n=>mAdd(month,n));
+  const I=ms.map(m=>sumA(mTx(m,'inc'))),E=ms.map(m=>sumA(mTx(m,'exp'))),mx=Math.max(...I,...E,1),tI=sumA(I.map(v=>({amount:v})));
+  const ch=`<div class="chart">${ms.map((m,i)=>`<div class="col"><div class="bw" style="gap:2px"><div class="cb" style="height:${I[i]/mx*100}%;background:var(--inc)"></div><div class="cb" style="height:${E[i]/mx*100}%"></div></div><span>${MONTHS[+m.slice(5)-1].slice(0,3)}</span></div>`).join('')}</div><div class="mut" style="margin-top:6px"><span class="inc">■ kirim</span> &nbsp; <span class="exp">■ chiqim</span></div>`;
+  const src={};ms.forEach((m,i)=>mTx(m,'inc').forEach(t=>{const o=src[t.cat]=src[t.cat]||{t:0,mo:new Set(),a:0,b:0};o.t+=t.amount;o.mo.add(m);if(i>=3)o.b+=t.amount;else o.a+=t.amount}));
+  const rows=Object.entries(src).sort((a,b)=>b[1].t-a[1].t),lk=S.tx.filter(t=>!t.debtId&&t.type==='exp'&&t.src&&ms.includes(t.date.slice(0,7)));
+  const stb=n=>n>=5?['Barqaror','var(--inc)']:n>=3?['O’rtacha','#e8a317']:['Tebranuvchi','var(--exp)'];
+  const pr=rows.map(([c,o])=>[c,o.t,sumA(lk.filter(t=>t.src===c))]).sort((a,b)=>(b[1]-b[2])-(a[1]-a[2]));
+  const by=byCat(mTx(month,'exp')),te=sumA(mTx(month,'exp')),gs={z:0,m:0,i:0};GL=Object.keys(by);GL.forEach(c=>gs[S.grp[c]||'m']+=by[c]);
+  const dim=new Date(+month.slice(0,4),+month.slice(5),0).getDate(),dd=+td.slice(8,10),pe=isC?E[5]/dd*dim:E[5];
+  const pv=E.slice(2,5).filter(v=>v>0),av=pv.length?pv.reduce((a,b)=>a+b,0)/pv.length:0,cur=net(S.tx.filter(t=>t.date<=td));
+  return back+mnav()+`<h2>Kirim va chiqim (6 oy)</h2><div class="card">${ch}</div>
+  <div class="card"><div class="row"><span class="mut">${isC?'Oy oxiriga prognoz chiqim':'Oy chiqimi'}</span><b class="exp">${fmt(pe)}</b></div>
+   <div class="row" style="margin-top:6px"><span class="mut">${isC?'Prognoz sof oqim':'Sof oqim'}</span><b style="color:${I[5]-pe>=0?'var(--inc)':'var(--exp)'}">${I[5]-pe<0?'− ':''}${fmt(Math.abs(I[5]-pe))}</b></div>
+   <div class="row" style="margin-top:6px"><span class="mut">Zaxira (runway)</span><b>${av>0?(Math.max(cur,0)/av).toFixed(1)+' oy':'—'}</b></div></div>
+  <h2>Daromad manbalari</h2>`+(rows.length?(rows[0][1].t/tI>.8?`<div class="card exp">Diqqat: daromadning ${Math.round(rows[0][1].t/tI*100)}% bitta manbadan (${esc(rows[0][0])}). Ikkinchi manba qo’shishni o’ylang.</div>`:'')+rows.map(([c,o])=>{const s=stb(o.mo.size);return `<div class="card"><div class="row"><span>${esc(c)}</span><b>${fmt(o.t)} <span class="mut">${Math.round(o.t/tI*100)}%</span></b></div><div class="bar inc" style="width:${Math.max(4,o.t/tI*100)}%"></div>
+   <div class="row mut" style="margin-top:6px"><b style="color:${s[1]}">${s[0]} (${o.mo.size}/6 oy)</b><span>so’nggi 3 oy ${chg(o.b,o.a)}</span></div></div>`}).join(''):'<div class="empty">Kirim kiritilmagan</div>')+
+  `<h2>Qaysi manba foydaliroq</h2>`+(lk.length?pr.map(([c,t,e])=>`<div class="card"><div class="row"><span>${esc(c)}</span><b style="color:${t-e>=0?'var(--inc)':'var(--exp)'}">${t-e<0?'− ':''}${fmt(Math.abs(t-e))}</b></div><div class="mut">Tushum ${fmt(t)} − bog’liq xarajat ${fmt(e)}</div></div>`).join(''):'<div class="card mut">Xarajat qo’shayotganda «Qaysi daromad manbasi uchun?» ni tanlang, shunda har manbaning sof foydasi shu yerda chiqadi.</div>')+
+  `<h2>Zarur / muhim / ixtiyoriy (shu oy)</h2><div class="card">${GI.map(([k,n])=>`<div class="row" style="margin-top:4px"><span class="mut">${n}</span><b>${fmt(gs[k])} <span class="mut">${te?Math.round(gs[k]/te*100):0}%</span></b></div>`).join('')}<div class="row hr"><span>Qisqartirish imkoni (ixtiyoriyning 20%i)</span><b class="inc">${fmt(gs.i*.2)}/oy</b></div></div>`+
+  GL.map((c,i)=>`<div class="card row"><span>${esc(c)}<div class="mut">${fmt(by[c])}</div></span><select style="width:130px" onchange="setGrp(${i},this.value)">${GI.map(([k,n])=>`<option value="${k}" ${(S.grp[c]||'m')===k?'selected':''}>${n}</option>`).join('')}</select></div>`).join('');
+}
+function goals(){
+  const td=today();let need=0;
+  const L=S.goals.map(g=>{const p=Math.min(100,g.saved/g.target*100),lf=g.target-g.saved,dy=g.date?(D0(g.date)-D0(td))/864e5:0,mo=Math.max(1,Math.ceil(dy/30));
+    if(lf>0&&g.date&&dy>0)need+=lf/mo;
+    return `<div class="card"><div class="row"><b>${esc(g.name)}</b><button class="x" onclick="goalDel('${g.id}')">×</button></div><div class="row mut" style="margin-top:4px"><span>${fmt(g.saved)} / ${fmt(g.target)}</span><b>${Math.round(p)}%</b></div><div class="bar inc" style="width:${Math.max(2,p)}%"></div>
+    <div class="mut" style="margin-top:6px">${lf<=0?'Maqsadga erishildi!':!g.date?'Muddat belgilanmagan':dy<=0?'Muddat o’tgan, qoldiq '+fmt(lf):`Muddat ${g.date}: oyiga ${fmt(lf/mo)} ajratish kerak`}</div>
+    <button style="margin-top:8px" onclick="goalAddForm('${g.id}')">+ Qo’shish</button></div>`}).join('');
+  const fl=sumA(mTx(td.slice(0,7),'inc'))-sumA(mTx(td.slice(0,7),'exp'));
+  return back+`<h2>Jamg’arma maqsadlari</h2>`+(S.goals.length?`<div class="card"><div class="row"><span class="mut">Maqsadlar uchun oylik kerak</span><b>${fmt(need)}</b></div><div class="row" style="margin-top:6px"><span class="mut">Shu oy sof oqim</span><b style="color:${fl>=need?'var(--inc)':'var(--exp)'}">${fl<0?'− ':''}${fmt(Math.abs(fl))}</b></div>${need>0?`<div class="mut" style="margin-top:6px">${fl>=need?'Sof oqim maqsadlarni qoplaydi.':'Sof oqim maqsadlar uchun yetmaydi: harajatni qisqartiring yoki muddatni uzaytiring.'}</div>`:''}</div>`+L:'<div class="empty">Maqsad yo’q. «+» bilan qo’shing.</div>')+`<button class="p fab" onclick="goalForm()">+</button>`;
+}
+function goalForm(){
+  $('#modal').innerHTML=sheet(`<b>Yangi maqsad</b><label>Nomi</label><input id="g_n" type="text"><label>Maqsad summasi (so’m)</label>${amt('g_amt')}<label>Muddat (ixtiyoriy)</label><input id="g_d" type="date">
+   <div class="row" style="margin-top:14px"><button onclick="close_()">Bekor qilish</button><button class="p" onclick="addGoal()">Saqlash</button></div>`);
+}
+function addGoal(){
+  const n=$('#g_n').value.trim(),a=+$('#g_amt').value;if(!n)return alert('Nomini kiriting');if(!(a>0))return alert('Summani kiriting');
+  S.goals.push({id:uid(),name:n,target:a,saved:0,date:$('#g_d').value||''});save();close_();render();
+}
+function goalAddForm(id){
+  $('#modal').innerHTML=sheet(`<b>Jamg’armaga qo’shish</b><label>Summa (so’m)</label>${amt('ga_amt')}<div class="mut" style="margin-top:6px">Bu faqat maqsad hisobini yuritadi, asosiy balansga ta’sir qilmaydi.</div>
+   <div class="row" style="margin-top:14px"><button onclick="close_()">Bekor qilish</button><button class="p" onclick="goalAdd('${id}')">Saqlash</button></div>`);
+}
+function goalAdd(id){const a=+$('#ga_amt').value;if(!(a>0))return alert('Summani kiriting');S.goals.find(g=>g.id===id).saved+=a;save();close_();render()}
+function goalDel(id){if(confirm("Maqsad o'chirilsinmi?")){S.goals=S.goals.filter(g=>g.id!==id);save();render()}}
 
 /* ---------- Kategoriyalar ---------- */
 function cats(){
@@ -365,7 +441,7 @@ function delCat(i){
 /* ---------- Menyu ---------- */
 function menu(){
   const it=(t,v,f)=>`<div class="card row mi" onclick="${f}"><span>${t}</span><span class="mut">${v} ›</span></div>`;
-  return `<h2>Menyu</h2>`+it('Moliyaviy ko’rsatkichlar','',"go('kpi')")+it('Moliyaviy yordamchi','',"go('help')")+it('Kategoriyalar','',"go('cats')")+it('Oylik limit',S.budget>0?fmt(S.budget):'belgilanmagan','budForm()')+it('PIN kod',S.pin?'yoqilgan':'o’chiq','pinForm()')
+  return `<h2>Menyu</h2>`+it('Moliyaviy ko’rsatkichlar','',"go('kpi')")+it('Moliyaviy yordamchi','',"go('help')")+it('Xarajatlar tahlili','',"go('ana')")+it('Cash flow','',"go('cf')")+it('Maqsadlar',S.goals.length?S.goals.length+' ta':'',"go('goals')")+it('Kategoriyalar','',"go('cats')")+it('Oylik limit',S.budget>0?fmt(S.budget):'belgilanmagan','budForm()')+it('PIN kod',S.pin?'yoqilgan':'o’chiq','pinForm()')
    +`<h2>Zaxira nusxa</h2>`+it('Eksport (faylga saqlash)','','expo()')+it('Import (fayldan tiklash)','','impo()')
    +`<input id="imp" type="file" accept=".json,application/json" style="display:none" onchange="impFile(this)"><h2>Boshqa</h2>`+it('Ilova haqida','v'+V,'about()');
 }
@@ -409,7 +485,7 @@ function lp(k){
 }
 /* Zaxira nusxa */
 async function expo(){
-  skipLock=true;const n='harajat-'+today()+'.json',j=JSON.stringify({app:'harajat',v:V,tx:S.tx,debts:S.debts,cats:S.cats,budget:S.budget,asset:S.asset,snap:S.snap},null,1),P=window.Capacitor&&window.Capacitor.Plugins;
+  skipLock=true;const n='harajat-'+today()+'.json',j=JSON.stringify({app:'harajat',v:V,tx:S.tx,debts:S.debts,cats:S.cats,budget:S.budget,asset:S.asset,snap:S.snap,goals:S.goals,grp:S.grp},null,1),P=window.Capacitor&&window.Capacitor.Plugins;
   try{
     if(P&&P.Filesystem&&P.Share){const r=await P.Filesystem.writeFile({path:n,data:j,directory:'CACHE',encoding:'utf8'});await P.Share.share({title:n,url:r.uri,dialogTitle:'Zaxira nusxani saqlash'})}
     else{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([j],{type:'application/json'}));a.download=n;a.click()}
@@ -422,7 +498,7 @@ function impFile(el){
   r.onload=()=>{skipLock=false;try{
     const d=JSON.parse(r.result);if(!Array.isArray(d.tx)||!Array.isArray(d.debts)||!d.cats||!d.cats.exp||!d.cats.inc)throw Error('Fayl formati noto’g’ri');
     if(!confirm('Joriy ma’lumotlar fayldagilari bilan almashtiriladi. Davom etasizmi?'))return;
-    S={tx:d.tx,debts:d.debts,cats:d.cats,budget:d.budget||0,asset:d.asset||0,snap:d.snap||{},pin:S.pin};S.debts.forEach(x=>{if(x.pa==null)x.pa=x.paid?x.amount:0});
+    S={tx:d.tx,debts:d.debts,cats:d.cats,budget:d.budget||0,asset:d.asset||0,snap:d.snap||{},goals:d.goals||[],grp:d.grp||{},pin:S.pin};S.debts.forEach(x=>{if(x.pa==null)x.pa=x.paid?x.amount:0});
     save();render();alert('Tiklandi: '+S.tx.length+' ta operatsiya');
   }catch(x){alert('Import xatosi: '+x.message)}el.value=''};
   r.readAsText(f);
