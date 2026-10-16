@@ -67,15 +67,20 @@ const K='harajat_v1';
 const $=s=>document.querySelector(s);
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
+const nowT=()=>{const d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+const ctime=t=>{const n=parseInt(String(t.id).slice(0,-4),36);return isNaN(n)?0:n};
+const tmin=t=>{if(t.time)return t.time;const n=ctime(t);if(!n)return'00:00';const d=new Date(n);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+const txCmp=(a,b)=>b.date.localeCompare(a.date)||tmin(b).localeCompare(tmin(a))||((b.ts||ctime(b))-(a.ts||ctime(a)));
 const fmt=n=>Math.round(n).toLocaleString('ru-RU').replace(/\u00a0/g,' ')+" so'm";
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const MONTHS=['Yanvar','Fevral','Mart','Aprel','May','Iyun','Iyul','Avgust','Sentabr','Oktabr','Noyabr','Dekabr'];
 
 const net=l=>l.reduce((s,x)=>s+(x.type==='inc'?x.amount:-x.amount),0);
-const amt=(id,v='')=>`<div class="amt"><input id="${id}" type="number" inputmode="numeric" min="0" value="${v}"><button type="button" onclick="calcOpen('${id}')" aria-label="Kalkulyator">${CI}</button></div>`;
+const amt=(id,v='')=>`<div class="amt"><input id="${id}" type="number" inputmode="numeric" min="0" value="${v}"><button type="button" onclick="z3('${id}')" aria-label="000">000</button><button type="button" onclick="calcOpen('${id}')" aria-label="Kalkulyator">${CI}</button></div>`;
+function z3(id){const e=$('#'+id);if(e&&e.value&&e.value!=='0'){e.value=e.value+'000'}e&&e.focus()}
 function load(){
-  try{const d=JSON.parse(localStorage.getItem(K));if(d&&d.tx){d.budget=d.budget||0;d.asset=d.asset||0;d.snap=d.snap||{};d.pin=d.pin||'';d.debts=d.debts||[];d.goals=d.goals||[];d.grp=d.grp||{};d.debts.forEach(x=>{if(x.pa==null)x.pa=x.paid?x.amount:0});return d}}catch(e){}
-  return{budget:0,asset:0,snap:{},pin:'',tx:[],debts:[],goals:[],grp:{},cats:{
+  try{const d=JSON.parse(localStorage.getItem(K));if(d&&d.tx){d.budget=d.budget||0;d.asset=d.asset||0;d.snap=d.snap||{};d.pin=d.pin||'';d.grace=d.grace==null?30:d.grace;d.bio=!!d.bio;d.debts=d.debts||[];d.goals=d.goals||[];d.grp=d.grp||{};d.debts.forEach(x=>{if(x.pa==null)x.pa=x.paid?x.amount:0});return d}}catch(e){}
+  return{budget:0,asset:0,snap:{},pin:'',grace:30,bio:false,tx:[],debts:[],goals:[],grp:{},cats:{
     exp:['Oziq-ovqat','Transport','Aloqa','Uy-joy','Kiyim',"Sog'liq",'Boshqa'],
     inc:['Oylik','Bonus','Boshqa']}};
 }
@@ -97,7 +102,7 @@ function render(){
 }
 
 /* ---------- Asosiy ---------- */
-const V='1.4.0';
+const V='1.5.0';
 let HF={q:'',cat:''},ED=null,skipLock=false;
 const rem=d=>d.paid?0:d.amount-(d.pa||0);
 const sheet=h=>`<div class="modal" onclick="if(event.target===this)close_()"><div class="sheet">${h}</div></div>`;
@@ -128,17 +133,17 @@ function home(){
 }
 function hl(){
   const act=HF.q||HF.cat,q=HF.q.toLowerCase();
-  const list=S.tx.filter(t=>(act||t.date.startsWith(month))&&(!HF.cat||t.cat===HF.cat)&&(!q||(t.cat+' '+(t.note||'')+' '+t.amount+' '+t.date).toLowerCase().includes(q))).sort((a,b)=>b.date.localeCompare(a.date));
+  const list=S.tx.filter(t=>(act||t.date.startsWith(month))&&(!HF.cat||t.cat===HF.cat)&&(!q||(t.cat+' '+(t.note||'')+' '+t.amount+' '+t.date).toLowerCase().includes(q))).sort(txCmp);
   const te=list.filter(t=>t.type==='exp').reduce((s,t)=>s+t.amount,0),ti=list.filter(t=>t.type==='inc').reduce((s,t)=>s+t.amount,0);
   $('#hl').innerHTML=(act?`<div class="card"><div class="mut">Barcha oylar bo’yicha topildi: ${list.length} ta</div><div class="row" style="margin-top:6px"><span class="exp">− ${fmt(te)}</span><span class="inc">+ ${fmt(ti)}</span></div><div class="row hr"><span>Jami (itogo)</span><b class="big ${ti-te<0?'exp':''}">${ti-te<0?'− ':''}${fmt(Math.abs(ti-te))}</b></div></div>`:'')+
-  (list.length?list.map(t=>`<div class="card row" onclick="txForm('${t.type}','${t.id}')"><div><div>${esc(t.cat)}${t.note?' · '+esc(t.note):''}</div><div class="mut">${t.date}</div></div>
+  (list.length?list.map(t=>`<div class="card row" onclick="txForm('${t.type}','${t.id}')"><div><div>${esc(t.cat)}${t.note?' · '+esc(t.note):''}</div><div class="mut">${t.date}${t.time?' · '+t.time:''}</div></div>
     <div class="row"><b class="${t.type}">${t.type==='exp'?'−':'+'}${fmt(t.amount)}</b><button class="x" onclick="event.stopPropagation();delTx('${t.id}')">×</button></div></div>`).join(''):`<div class="empty">${act?'Hech narsa topilmadi.':'Bu oyda operatsiya yo’q. «+» tugmasi bilan qo’shing.'}</div>`);
 }
 function txForm(type,id,keep){
   let d;
-  if(keep)d={amount:$('#f_amt').value,cat:'',note:$('#f_note').value,date:$('#f_date').value,src:''};
-  else if(id){const t=S.tx.find(x=>x.id===id);type=t.type;d={amount:t.amount,cat:t.cat,note:t.note||'',date:t.date,src:t.src||''}}
-  else d={amount:'',cat:'',note:'',date:today(),src:''};
+  if(keep)d={amount:$('#f_amt').value,cat:'',note:$('#f_note').value,date:$('#f_date').value,time:$('#f_time').value,src:''};
+  else if(id){const t=S.tx.find(x=>x.id===id);type=t.type;d={amount:t.amount,cat:t.cat,note:t.note||'',date:t.date,time:t.time||tmin(t),src:t.src||''}}
+  else d={amount:'',cat:'',note:'',date:today(),time:nowT(),src:''};
   ED=id||null;
   const cs=S.cats[type].slice();if(d.cat&&!cs.includes(d.cat))cs.push(d.cat);
   $('#modal').innerHTML=sheet(`<div class="seg"><button class="${type==='exp'?'on':''}" onclick="txForm('exp',ED,1)">Harajat</button><button class="${type==='inc'?'on':''}" onclick="txForm('inc',ED,1)">Kirim</button></div>
@@ -147,13 +152,14 @@ function txForm(type,id,keep){
     ${type==='exp'?`<label>Qaysi daromad manbasi uchun? (ixtiyoriy)</label><select id="f_src"><option value="">—</option>${S.cats.inc.map(c=>`<option ${c===d.src?'selected':''}>${esc(c)}</option>`).join('')}</select>`:''}
     <label>Izoh (ixtiyoriy)</label><input id="f_note" type="text" value="${esc(d.note)}">
     <label>Sana</label><input id="f_date" type="date" value="${d.date||today()}">
+    <label>Vaqt (soat:daqiqa)</label><input id="f_time" type="time" value="${d.time||nowT()}">
     <div class="row" style="margin-top:14px"><button onclick="close_()">Bekor qilish</button><button class="p" onclick="addTx('${type}')">Saqlash</button></div>`);
 }
 function addTx(type){
   const amount=+$('#f_amt').value;
   if(!(amount>0))return alert("Summani kiriting");
-  const o={type,amount,cat:$('#f_cat').value,note:$('#f_note').value.trim(),date:$('#f_date').value||today(),src:$('#f_src')?$('#f_src').value:''};
-  if(ED){Object.assign(S.tx.find(x=>x.id===ED),o)}else S.tx.push({id:uid(),...o});
+  const o={type,amount,cat:$('#f_cat').value,note:$('#f_note').value.trim(),date:$('#f_date').value||today(),time:$('#f_time').value||nowT(),src:$('#f_src')?$('#f_src').value:''};
+  if(ED){Object.assign(S.tx.find(x=>x.id===ED),o)}else S.tx.push({id:uid(),ts:Date.now(),...o});
   save();close_();render();if(type==='exp')bcheck(o.date);
 }
 function bcheck(d){
@@ -253,7 +259,7 @@ function addDebt(kind){
   if(!(amount>0))return alert("Summani kiriting");
   const d={id:uid(),kind,person,amount,pa:0,note:$('#d_note').value.trim(),date:$('#d_date').value||today(),paid:false};
   S.debts.push(d);
-  if($('#d_aff').checked)S.tx.push({id:uid(),debtId:d.id,type:kind==='owe'?'inc':'exp',amount,cat:kind==='owe'?'Qarz olindi':'Qarz berildi',note:person,date:d.date});
+  if($('#d_aff').checked)S.tx.push({id:uid(),debtId:d.id,type:kind==='owe'?'inc':'exp',amount,cat:kind==='owe'?'Qarz olindi':'Qarz berildi',note:person,date:d.date,time:nowT(),ts:Date.now()});
   save();close_();render();
 }
 function payForm(id){
@@ -270,7 +276,7 @@ function settle(id,aff){
   const d=S.debts.find(x=>x.id===id);let a=+$('#s_amt').value;
   if(!(a>0))return alert("Summani kiriting");
   a=Math.min(a,rem(d));d.pa=(d.pa||0)+a;if(d.pa>=d.amount)d.paid=true;
-  if(aff)S.tx.push({id:uid(),debtId:id,settle:true,type:d.kind==='due'?'inc':'exp',amount:a,cat:d.kind==='due'?'Haq qaytdi':"Qarz to'landi",note:d.person,date:today()});
+  if(aff)S.tx.push({id:uid(),debtId:id,settle:true,type:d.kind==='due'?'inc':'exp',amount:a,cat:d.kind==='due'?'Haq qaytdi':"Qarz to'landi",note:d.person,date:today(),time:nowT(),ts:Date.now()});
   save();close_();render();
 }
 function undoPay(id){
@@ -460,7 +466,9 @@ function about(){
 /* PIN */
 function pinForm(){
   if(!S.pin)return pinNew();
-  $('#modal').innerHTML=sheet(`<b>PIN kod yoqilgan</b><button class="p" style="width:100%;margin-top:12px" onclick="pinNew()">PIN ni almashtirish</button><button style="width:100%;margin-top:8px" onclick="pinOff()">PIN ni o’chirish</button><button class="x" style="width:100%;margin-top:4px" onclick="close_()">Yopish</button>`);
+  $('#modal').innerHTML=sheet(`<b>PIN kod yoqilgan</b><label>Qayta PIN so'ramaslik vaqti (dasturdan chiqib qaytganda)</label><select onchange="S.grace=+this.value;save()">${[[0,'Doim so\u2019rasin'],[30,'30 soniya'],[60,'1 daqiqa'],[300,'5 daqiqa']].map(o=>`<option value="${o[0]}" ${S.grace===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>
+    ${BIO()?`<button style="width:100%;margin-top:10px" onclick="bioToggle()">Barmoq izi bilan kirish: ${S.bio?'yoqilgan':'o\u2019chiq'}</button>`:''}
+    <button class="p" style="width:100%;margin-top:12px" onclick="pinNew()">PIN ni almashtirish</button><button style="width:100%;margin-top:8px" onclick="pinOff()">PIN ni o’chirish</button><button class="x" style="width:100%;margin-top:4px" onclick="close_()">Yopish</button>`);
 }
 function pinNew(){
   $('#modal').innerHTML=sheet(`<b>Yangi PIN kod</b><label>4 ta raqam</label><input id="p1" type="password" inputmode="numeric" maxlength="4"><label>Takrorlang</label><input id="p2" type="password" inputmode="numeric" maxlength="4">
@@ -473,15 +481,31 @@ function pinOff(){
 }
 function pinDel(){if($('#p1').value!==S.pin)return alert('PIN noto’g’ri');S.pin='';save();close_();render()}
 let pin_='';
-function lockShow(){if(!S.pin)return;pin_='';lockDraw();$('#lock').style.display='flex'}
+function lockShow(){if(!S.pin)return;pin_='';lockDraw();$('#lock').style.display='flex';if(S.bio&&BIO())setTimeout(bioAuth,300)}
 function lockDraw(msg){
   const K=n=>`<button onclick="lp('${n}')">${n}</button>`;
-  $('#lock').innerHTML=`<b class="big">PIN kodni kiriting</b><div class="dots" style="margin-top:18px">${[0,1,2,3].map(i=>`<span class="${i<pin_.length?'f':''}"></span>`).join('')}</div><div class="exp" style="height:20px;margin-top:10px">${msg||''}</div><div class="lk">${'123456789'.split('').map(K).join('')}<span></span>${K('0')}<button onclick="lp('⌫')">⌫</button></div>`;
+  $('#lock').innerHTML=`<b class="big">PIN kodni kiriting</b><div class="dots" style="margin-top:18px">${[0,1,2,3].map(i=>`<span class="${i<pin_.length?'f':''}"></span>`).join('')}</div><div class="exp" style="height:20px;margin-top:10px">${msg||''}</div><div class="lk">${'123456789'.split('').map(K).join('')}<span></span>${K('0')}<button onclick="lp('⌫')">⌫</button></div>${S.bio&&BIO()?'<button class="p" style="margin-top:18px" onclick="bioAuth()">Barmoq izi bilan kirish</button>':''}`;
 }
 function lp(k){
   if(k==='⌫')pin_=pin_.slice(0,-1);else if(pin_.length<4)pin_+=k;
   if(pin_.length===4){if(pin_===S.pin){$('#lock').style.display='none';pin_='';return}pin_='';return lockDraw('PIN noto’g’ri')}
   lockDraw();
+}
+/* Barmoq izi (capacitor-native-biometric plagini kerak) */
+const BIO=()=>{const P=window.Capacitor&&window.Capacitor.Plugins;return P&&P.NativeBiometric};
+async function bioAuth(){
+  if(!BIO()||$('#lock').style.display!=='flex')return;
+  skipLock=true;
+  try{await BIO().verifyIdentity({reason:'Dasturga kirish',title:'Harajat',subtitle:'Barmoq izingizni tasdiqlang'});$('#lock').style.display='none';pin_=''}
+  catch(e){}
+  setTimeout(()=>skipLock=false,1500);
+}
+async function bioToggle(){
+  if(S.bio){S.bio=false;save();close_();return pinForm()}
+  skipLock=true;
+  try{const r=await BIO().isAvailable();if(!r||!r.isAvailable)throw Error('Telefonda barmoq izi sozlanmagan');await BIO().verifyIdentity({reason:'Barmoq izini yoqish',title:'Harajat'});S.bio=true;save()}
+  catch(e){alert('Barmoq izi yoqilmadi: '+((e&&e.message)||'bekor qilindi'))}
+  setTimeout(()=>skipLock=false,1500);close_();pinForm();
 }
 /* Zaxira nusxa */
 async function expo(){
@@ -498,7 +522,7 @@ function impFile(el){
   r.onload=()=>{skipLock=false;try{
     const d=JSON.parse(r.result);if(!Array.isArray(d.tx)||!Array.isArray(d.debts)||!d.cats||!d.cats.exp||!d.cats.inc)throw Error('Fayl formati noto’g’ri');
     if(!confirm('Joriy ma’lumotlar fayldagilari bilan almashtiriladi. Davom etasizmi?'))return;
-    S={tx:d.tx,debts:d.debts,cats:d.cats,budget:d.budget||0,asset:d.asset||0,snap:d.snap||{},goals:d.goals||[],grp:d.grp||{},pin:S.pin};S.debts.forEach(x=>{if(x.pa==null)x.pa=x.paid?x.amount:0});
+    S={tx:d.tx,debts:d.debts,cats:d.cats,budget:d.budget||0,asset:d.asset||0,snap:d.snap||{},goals:d.goals||[],grp:d.grp||{},pin:S.pin,grace:S.grace,bio:S.bio};S.debts.forEach(x=>{if(x.pa==null)x.pa=x.paid?x.amount:0});
     save();render();alert('Tiklandi: '+S.tx.length+' ta operatsiya');
   }catch(x){alert('Import xatosi: '+x.message)}el.value=''};
   r.readAsText(f);
@@ -519,7 +543,7 @@ function calcOpen(id){
   const B=(t,c='')=>`<button class="${c}" onclick="cp('${t}')">${t}</button>`;
   $('#calc').innerHTML=`<div class="modal" style="z-index:20" onclick="if(event.target===this)calcClose()"><div class="sheet">
     <div class="cd" id="c_e"></div><div class="cr" id="c_r"></div>
-    <div class="keys">${B('C','op')}${B('⌫','op')}${B('÷','op')}${B('×','op')}${B('7')}${B('8')}${B('9')}${B('−','op')}${B('4')}${B('5')}${B('6')}${B('+','op')}${B('1')}${B('2')}${B('3')}${B('=','op')}${B('0','z')}${B('00')}${B('.')}</div>
+    <div class="keys">${B('C','op')}${B('⌫','op')}${B('÷','op')}${B('×','op')}${B('7')}${B('8')}${B('9')}${B('−','op')}${B('4')}${B('5')}${B('6')}${B('+','op')}${B('1')}${B('2')}${B('3')}${B('=','op')}${B('0')}${B('00')}${B('000')}${B('.')}</div>
     <div class="row" style="margin-top:12px"><button onclick="calcClose()">Yopish</button><button class="p" onclick="calcApply()">Summaga qo'llash</button></div></div></div>`;
   cdraw();
 }
@@ -548,7 +572,31 @@ function calcApply(){
   $('#'+cf).value=v;calcClose();
 }
 
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&!skipLock)lockShow()});
+let hiddenAt=0;
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){hiddenAt=Date.now();if(!skipLock&&!S.grace)lockShow()}
+  else if(S.pin&&!skipLock&&hiddenAt&&S.grace&&(Date.now()-hiddenAt)/1000>=S.grace)lockShow();
+});
+
+/* NAZAD tugmasi: dasturdan chiqib ketmasdan ekranlar bo'ylab orqaga qaytadi */
+const PARENT={kpi:'menu',help:'menu',ana:'menu',cf:'menu',goals:'menu',cats:'menu',menu:'home',rep:'home',debts:'home'};
+let armed=false,armT=0;
+function toast(m){let e=$('#toast');if(!e){e=document.createElement('div');e.id='toast';e.style.cssText='position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#333;color:#fff;padding:10px 18px;border-radius:20px;font-size:14px;z-index:99;opacity:.95';document.body.appendChild(e)}e.textContent=m;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',2000)}
+const atRoot=()=>history.state&&history.state.root;
+function rearm(){if(atRoot())history.pushState({app:1},'')}
+history.replaceState({root:1},'');history.pushState({app:1},'');
+window.addEventListener('popstate',()=>{
+  if(!atRoot())return;
+  if($('#lock').style.display!=='flex'){
+    if($('#calc').innerHTML.trim()){calcClose();return rearm()}
+    if($('#modal').innerHTML.trim()){close_();return rearm()}
+    if(tab!=='home'){tab=PARENT[tab]||'home';render();return rearm()}
+    if(HF.q||HF.cat){HF={q:'',cat:''};render();return rearm()}
+  }
+  armed=true;toast('Chiqish uchun yana bir marta bosing');
+  clearTimeout(armT);armT=setTimeout(()=>{armed=false;rearm()},2000);
+});
+document.addEventListener('click',()=>{if(atRoot()){armed=false;clearTimeout(armT);history.pushState({app:1},'')}},true);
 lockShow();
 render();
 </script>
